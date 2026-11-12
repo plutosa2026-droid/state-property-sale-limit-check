@@ -40,6 +40,22 @@ function ZoneDetail({ item }: { item: ZoneResult }) {
           {item.laws.join(", ")}
         </p>
       ) : null}
+      {item.lawContents?.length ? (
+        <div className="mt-2 text-base">
+          <p className="font-medium text-zinc-700 dark:text-zinc-300">근거 법률 내용</p>
+          <ul className="mt-1 flex flex-col gap-2">
+            {item.lawContents.map((content) => (
+              <li key={`${content.law}${content.ref}`}>
+                <p className="font-medium">
+                  {content.law} {content.ref}
+                  {content.title ? `(${content.title})` : ""}
+                </p>
+                <blockquote className="mt-0.5 break-words border-l-4 border-zinc-300 pl-3 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400">“{content.quote}”</blockquote>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="mt-2 text-base">
         <p className="font-medium text-zinc-700 dark:text-zinc-300">근거</p>
         {item.evidence.length === 0 ? (

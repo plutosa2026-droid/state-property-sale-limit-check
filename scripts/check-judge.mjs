@@ -7,6 +7,8 @@ import { deriveSecret, signLookup } from "../lib/token.ts";
 const base = process.argv[2] ?? "http://localhost:3100";
 const keys = [process.env.OPENAI_API_KEY, process.env.VWORLD_API_KEY].filter(Boolean);
 const ruleIds = new Set([...["gijun", "beop", "sihaengryeong", "sihaenggyuchik", "yogang"].flatMap((n) => JSON.parse(readFileSync(`data/rules/${n}.json`, "utf8")).rules.map((r) => r.id)), ...JSON.parse(readFileSync("data/rules/laws.json", "utf8")).documents.flatMap((d) => d.rules.map((r) => r.id))]);
+const zoneLawTexts = JSON.parse(readFileSync("data/rules/zone-law-texts.json", "utf8")).laws;
+Object.keys(zoneLawTexts).forEach((name, index) => zoneLawTexts[name].articles.forEach((a) => ruleIds.add(`zl-${index}-${a.ref}`)));
 ruleIds.add("gijun-4-none"); // "제한 없음"의 고정 근거 표기
 
 // 판정 API는 "서버가 서명한 조회 결과"만 받는다. 시험에서는 서버와 같은 방법으로 서명 키를 만들어 토큰을 직접 만든다. (lib/server/guard.ts와 같은 방식)
@@ -45,7 +47,7 @@ const b = await judge("소로3류(폭 8m 미만)", "저촉");
 check("저촉: 확인 필요 + 제4조제1항제2호 근거", b?.verdict === "확인 필요" && b.evidence.some((e) => e.id === "gijun-4-2"), b && line(b));
 const c = await judge("중로1류(폭 20m~25m)", "접함");
 check("접함: 확인 필요", c?.verdict === "확인 필요", c && line(c));
-const d = await judge("교육환경보호구역", "포함");
+const d = await judge("처음보는이름구역", "포함");
 check("낯선 이름(포함): 확인 필요 + 근거 없음", d?.verdict === "확인 필요" && d.evidence.length === 0, d && line(d));
 const e = await judge("농업진흥구역", "포함");
 check("농업진흥구역: 제한 없음 + 참고 근거 제11조", e?.verdict === "제한 없음" && e.evidence.some((x) => x.id === "gijun-11"), e && line(e));

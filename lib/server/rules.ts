@@ -8,6 +8,7 @@ import sihaenggyuchik from "@/data/rules/sihaenggyuchik.json";
 import laws from "@/data/rules/laws.json";
 import yogang from "@/data/rules/yogang.json";
 import { findCandidates, type CandidateResult } from "@/lib/ruleMatch";
+import { ZONE_LAW_RULE_IDS } from "@/lib/server/zoneLawTexts";
 import type { DocumentInfo, Rule, RuleDocument } from "@/lib/types";
 
 // 근거 문서 5개. 처분기준을 맨 앞에 둔다 (매각제한 사유가 여기 있다). 업무요강 별표 6은 처분 유형별 승인 절차를 알려 주는 참고 근거다.
@@ -20,7 +21,7 @@ const RULES: Rule[] = DOCUMENTS.flatMap((doc) => doc.rules);
 const RULE_BY_ID = new Map(RULES.map((rule) => [rule.id, rule]));
 
 // 정리본에 실제로 있는 항목 id 모음 (근거 id가 진짜인지 확인할 때 쓴다)
-export const RULE_IDS: ReadonlySet<string> = new Set(RULES.map((rule) => rule.id));
+export const RULE_IDS: ReadonlySet<string> = new Set([...RULES.map((rule) => rule.id), ...ZONE_LAW_RULE_IDS]);
 
 // 지역·지구 이름 하나에 대한 근거 후보
 export function findRuleCandidates(zoneName: string): CandidateResult {

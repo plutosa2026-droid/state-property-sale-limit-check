@@ -6,6 +6,7 @@ import { checkRate, isLookupTokenValid, isSameOrigin } from "@/lib/server/guard"
 import { judgeZones, summarize } from "@/lib/server/judge";
 import { getDocumentInfos } from "@/lib/server/rules";
 import { lawsForZones, ZONE_LAWS_DOCUMENT } from "@/lib/server/zoneLaws";
+import { lawContentsForZones, zoneLawDocumentInfos } from "@/lib/server/zoneLawTexts";
 import { ERROR_MESSAGES, type ApiError, type CheckResponse, type ErrorCode, type Zone } from "@/lib/types";
 
 // 이 함수가 최대 몇 초까지 실행될 수 있는지 (새 AI 호출 마감 35초 + 호출 1번 최대 20초 = 55초보다 길게). Vercel 같은 환경에서 지켜진다.
@@ -14,6 +15,11 @@ export const maxDuration = 60;
 const MAX_ZONES = 100;
 const MAX_NAME_LENGTH = 100;
 const MAX_ADDRESS_LENGTH = 200;
+
+// 이름이 같은 문서는 하나만 남긴다 (정리본 법률과 근거 법률 조문 정리본에 같은 법률이 있을 수 있다)
+function mergeDocuments<T extends { name: string }>(...lists: T[][]): T[] {
+  return [...new Map(lists.flat().map((doc) => [doc.name, doc])).values()];
+}
 
 function errorResponse(error: ErrorCode, status: number, message?: string, headers?: HeadersInit) {
   const body: ApiError = { ok: false, error, message: message ?? ERROR_MESSAGES[error] };
@@ -71,17 +77,23 @@ export async function POST(request: Request) {
 
     // 지역·지구별 근거 법률(표시용)을 결과에 덧붙인다
     const zoneLaws = lawsForZones(results.map((result) => result.zone));
+    const lawContents = lawContentsForZones(results.map((result) => result.zone));
+    const usedSources = results.flatMap((result) => result.evidence.map((item) => item.source));
     const response: CheckResponse = {
       ok: true,
       documents: [
-        ...getDocumentInfos(results.flatMap((result) => result.evidence.map((item) => item.source))),
+        ...mergeDocuments(getDocumentInfos(usedSources), zoneLawDocumentInfos(usedSources)),
         // 지역·지구별 근거 법률(표시용)을 보여 줄 때는 그 표(토지이용규제 기본법 별표)의 기준일도 함께 보여 준다
         ...(Object.keys(zoneLaws).length > 0
           ? [{ name: "토지이용규제 기본법 별표(지역·지구별 근거 법률)", baseDate: ZONE_LAWS_DOCUMENT.baseDate, basis: ZONE_LAWS_DOCUMENT.basis }]
           : []),
       ],
       summary: summarize(results),
-      results: results.map((result) => ({ ...result, ...(zoneLaws[result.zone] ? { laws: zoneLaws[result.zone] } : {}) })),
+      results: results.map((result) => ({
+        ...result,
+        ...(zoneLaws[result.zone] ? { laws: zoneLaws[result.zone] } : {}),
+        ...(lawContents[result.zone] ? { lawContents: lawContents[result.zone] } : {}),
+      })),
       ...(aiFailures > 0 ? { incomplete: aiFailures } : {}),
     };
     return Response.json(response);

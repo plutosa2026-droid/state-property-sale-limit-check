@@ -12,7 +12,9 @@
 import "server-only";
 import OpenAI from "openai";
 import { getRequiredKey } from "@/lib/server/env";
-import { RULE_IDS, findRuleCandidates } from "@/lib/server/rules";
+import { RULE_IDS, findRuleCandidates, getRuleById } from "@/lib/server/rules";
+import { zoneLawContext } from "@/lib/server/zoneLawTexts";
+import { hasRestrictiveWording } from "@/lib/zoneLaws";
 import type { Candidate } from "@/lib/ruleMatch";
 import { enforceZoneResult, ensureAllZones } from "@/lib/safety";
 import {
@@ -22,6 +24,7 @@ import {
   NO_RESTRICTION_TEXT,
   VERDICTS,
   type Evidence,
+  type Rule,
   type Summary,
   type Verdict,
   type Zone,
@@ -80,10 +83,13 @@ const aiSchema = {
 const INSTRUCTIONS = [
   "당신은 국유재산 매각제한 검토를 돕는 보조자입니다.",
   "아래 '근거 조항'에 적힌 내용만 사용하세요. 근거 조항에 없는 법령·숫자·사실은 절대 지어내지 마세요.",
-  "매각 가능 여부나 결론은 말하지 말고, 이 지역·지구가 근거 조항의 매각제한 사유에 해당하는지만 판단하세요.",
+  "매각 가능 여부나 결론은 말하지 말고, 이 지역·지구가 근거 조항의 국유재산 매각 또는 활용 제한 사유에 해당하는지만 판단하세요.",
   "판정은 두 가지뿐입니다. '제한 있음'은 근거 조항의 원문이 이 지역·지구를 직접 가리키거나, 조건이 원문만으로 명백히 충족될 때만 고릅니다.",
   "조항이 일반 규정(예: '다른 법률에 따라 처분이 제한되는 경우')이고 해당 법률의 내용을 알 수 없으면 '확인 필요'를 고릅니다. 확신이 없으면 '확인 필요'입니다.",
-  "허가·협의·신고 같은 절차 요건이나 건축·설치 같은 행위 제한은 국유재산의 매각(처분) 제한이 아닙니다. 조항이 이 지역·지구의 국공유재산 매각·양도를 직접 금지하거나 제한하는 경우에만 '제한 있음'입니다.",
+  "'제한 있음'은 근거 조항이 이 지역·지구에서 국유재산(국가·지방자치단체 소유 토지 포함)의 ① 매각·양도·처분을 직접 금지하거나 제한하는 경우, 또는 ② 활용(사용·대부·점용·개발·건축·형질변경·용도변경 등)을 직접 금지하거나 원칙적으로 금지하고 예외만 허용하는 경우입니다.",
+  "예: \"~지역에서는 건축물의 건축·용도변경·형질변경 등을 하여서는 아니 된다(다만 허가를 받은 경우 예외)\"처럼 원칙적으로 금지하는 조항은 활용 제한이 있는 것입니다.",
+  "허가·협의·신고·승인을 받으면 된다는 절차 요건만 있거나, 지정 절차·정의·손실보상·부담금·조직 규정은 제한이 아닙니다. 이런 조항만 있으면 '확인 필요'입니다.",
+  "reason에는 제한이 매각에 대한 것인지 활용에 대한 것인지(또는 둘 다인지) 밝혀서 쓰세요.",
   "evidence_ids에는 판단에 실제로 쓴 근거 조항의 id만 넣으세요. 목록에 없는 id는 넣지 마세요.",
   "reason은 근거 조항 원문에 있는 내용만으로 쓴 한국어 한 문장(100자 이내)입니다.",
 ].join("\n");
@@ -138,6 +144,7 @@ const REASON = {
   aiFailed: "판정 서비스 오류로 자동 판정하지 못했습니다. 담당자 확인이 필요합니다.",
   timeout: "판정 시간이 초과되어 자동 판정하지 못했습니다. 다시 시도하거나 담당자가 확인해 주세요.",
   aiCap: "한 번에 자동 판정할 수 있는 건수를 넘어 자동 판정하지 못했습니다. 담당자 확인이 필요합니다.",
+  lawNoLimit: "근거 법률에서 국유재산 매각·활용을 직접 제한하는 조항을 찾지 못했습니다. 하위 규정·조례는 확인하지 못해 담당자 확인이 필요합니다.",
   aiUnsure: "근거 조항만으로는 매각제한 여부를 단정할 수 없어 담당자 확인이 필요합니다.",
 } as const;
 
@@ -153,7 +160,19 @@ export async function judgeZone(zone: Zone, options: JudgeOptions = {}): Promise
   const noAi: AiOutcome = { attempted: false, failed: false };
   // AI 호출 결과든 규칙으로 정한 결과든 마지막에 반드시 안전 규칙(lib/safety.ts)을 거친다.
   // 판단 이유 점검에 쓰도록 이 지역·지구의 근거 후보 원문을 함께 넘긴다.
-  const sourceTexts = [...found.restriction, ...found.related].map(({ rule }) => `${rule.source} ${rule.ref} ${rule.text}`);
+  // 근거 법률(토지이용규제 기본법 별표가 가리키는 법률)의 조문: 별표 조문(지정 근거)과 매각·활용 제한 후보 조문. 허용 목록의 지역·지구(용도지역 등)에는 쓰지 않는다.
+  const lawCtx = found.allowed ? null : zoneLawContext(zone.name);
+  const known = new Set([...found.restriction, ...found.related].map(({ rule }) => `${rule.source}|${rule.ref}`));
+  const toCandidate = (rule: Rule): Candidate => ({ rule, via: "지역·지구 분류", topic: "근거 법률" });
+  const lawLimit = (lawCtx?.limitRules ?? []).filter((rule) => !known.has(`${rule.source}|${rule.ref}`)).map(toCandidate);
+  const lawCited = (lawCtx?.citedRules ?? []).filter((rule) => !known.has(`${rule.source}|${rule.ref}`)).map(toCandidate);
+  // 제한 후보 조문이 있는데 처분기준 제4조 후보가 없으면, 일반 규정(제4조제1항제2호)을 후보로 삼아 AI가 읽게 한다
+  let restriction = found.restriction;
+  if (restriction.length === 0 && lawLimit.length > 0) {
+    const general = getRuleById(GENERAL_RESTRICTION_ID);
+    if (general) restriction = [toCandidate(general)];
+  }
+  const sourceTexts = [...restriction, ...found.related, ...lawLimit, ...lawCited].map(({ rule }) => `${rule.source} ${rule.ref} ${rule.text}`);
   const withEvidence = (verdict: Verdict, evidence: Evidence[], reason: string, ai: AiOutcome = noAi) => {
     const { result, fixes } = enforceZoneResult({ ...base, verdict, evidence, reason: trimReason(reason) }, { sourceTexts, knownEvidenceIds: RULE_IDS });
     // 무엇을 고쳤는지만 남긴다 (키·요청 내용은 남기지 않는다)
@@ -161,7 +180,7 @@ export async function judgeZone(zone: Zone, options: JudgeOptions = {}): Promise
     return { result, ai };
   };
   // 제한 후보가 있으면 그것을, 없으면 참고 조항을 근거로 보여 준다.
-  const shownCandidates = found.restriction.length > 0 ? found.restriction : found.related;
+  const shownCandidates = restriction.length > 0 ? restriction : found.related;
 
   // ① 저촉·접함·표기 없음 → 확인 필요 (PRD Must ② 규칙 5)
   if (zone.relation !== "포함") {
@@ -170,24 +189,26 @@ export async function judgeZone(zone: Zone, options: JudgeOptions = {}): Promise
   }
 
   // ②③ 포함인데 제4조 사유 후보가 없는 경우
-  if (found.restriction.length === 0) {
+  if (restriction.length === 0) {
     if (found.allowed) {
       const none: Evidence = { ...NO_RESTRICTION_EVIDENCE, quote: NO_RESTRICTION_TEXT };
       return withEvidence("제한 없음", [none, ...found.related.slice(0, 2).map(evidenceOf)], REASON.noRestriction);
     }
+    // 근거 법률은 찾았지만 매각·활용을 직접 제한하는 조항이 없는 경우: 확인 필요 (하위 규정·조례는 보지 못했으므로 "제한 없음"으로 단정하지 않는다)
+    if (lawCited.length > 0) return withEvidence("확인 필요", limitEvidence(lawCited), REASON.lawNoLimit);
     return withEvidence("확인 필요", [], REASON.notFound);
   }
 
   // ④ 포함 + 제4조 후보 있음 → AI가 "제한 있음 / 확인 필요" 중 고른다
-  const candidates = [...found.restriction, ...found.related];
+  const candidates = [...restriction, ...found.related, ...lawCited, ...lawLimit];
   const failedAi: AiOutcome = { attempted: true, failed: true };
   // 시간이 다 됐거나 요청이 취소됐으면 AI를 부르지 않고 확인 필요로 둔다
   if ((options.deadlineAt !== undefined && Date.now() > options.deadlineAt) || options.signal?.aborted) {
-    return withEvidence("확인 필요", limitEvidence(found.restriction), REASON.timeout, failedAi);
+    return withEvidence("확인 필요", limitEvidence(restriction), REASON.timeout, failedAi);
   }
   // 한 번의 요청에서 AI를 부를 수 있는 건수를 넘었으면 부르지 않는다 (비용 상한)
   if (options.takeAiSlot && !options.takeAiSlot()) {
-    return withEvidence("확인 필요", limitEvidence(found.restriction), REASON.aiCap, failedAi);
+    return withEvidence("확인 필요", limitEvidence(restriction), REASON.aiCap, failedAi);
   }
   try {
     const answer = await askAi(zone, candidates, options.signal);
@@ -195,15 +216,21 @@ export async function judgeZone(zone: Zone, options: JudgeOptions = {}): Promise
     const picked = [...new Set(answer.evidenceIds)].map((id) => byId.get(id)).filter((c): c is Candidate => c !== undefined);
     // 근거가 하나도 없거나, 근거가 일반 규정(제4조제1항제2호 "다른 법률에 따라 처분이 제한되는 경우")뿐이면 "제한 있음"은 인정하지 않는다.
     // 일반 규정만으로는 어떤 법률이 처분을 제한하는지 알 수 없다.
-    const onlyGeneral = picked.length > 0 && picked.every((c) => c.rule.id === GENERAL_RESTRICTION_ID);
-    if (answer.verdict === "제한 있음" && picked.length > 0 && !onlyGeneral) {
-      return withEvidence("제한 있음", picked.slice(0, MAX_EVIDENCE).map(evidenceOf), answer.reason || REASON.aiUnsure, { attempted: true, failed: false });
+    // 근거 법률 조문은 실제로 제한하는 말(할 수 없다·아니 된다·금지·제한)이 있는 "제한 후보 조문"일 때만 제한 있음의 근거로 인정한다.
+    // (별표가 가리키는 지정 조문이나 정의·절차 조문만 고르면 인정하지 않는다)
+    const limitIds = new Set(lawLimit.map((c) => c.rule.id));
+    const specific = picked.filter(
+      (c) => c.rule.id !== GENERAL_RESTRICTION_ID && (!c.rule.id.startsWith("zl-") || (limitIds.has(c.rule.id) && hasRestrictiveWording(c.rule.text))),
+    );
+    if (answer.verdict === "제한 있음" && specific.length > 0) {
+      const ordered = [...specific, ...picked.filter((c) => !specific.includes(c))];
+      return withEvidence("제한 있음", ordered.slice(0, MAX_EVIDENCE).map(evidenceOf), answer.reason || REASON.aiUnsure, { attempted: true, failed: false });
     }
-    return withEvidence("확인 필요", limitEvidence(picked.length > 0 ? picked : found.restriction), answer.reason || REASON.aiUnsure, { attempted: true, failed: false });
+    return withEvidence("확인 필요", limitEvidence(picked.length > 0 ? picked : restriction), answer.reason || REASON.aiUnsure, { attempted: true, failed: false });
   } catch (error) {
     // 원인은 종류만 남긴다 (요청 내용·키는 남기지 않는다)
     console.error("[check] AI 판정 실패:", error instanceof Error ? error.name : "알 수 없는 오류");
-    return withEvidence("확인 필요", limitEvidence(found.restriction), REASON.aiFailed, { attempted: true, failed: true });
+    return withEvidence("확인 필요", limitEvidence(restriction), REASON.aiFailed, { attempted: true, failed: true });
   }
 }
 

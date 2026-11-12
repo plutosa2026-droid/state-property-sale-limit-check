@@ -126,6 +126,15 @@ export type ZoneResult = {
   evidence: Evidence[]; // 근거를 못 찾은 "확인 필요"는 빈 배열
   reason: string; // 판단 이유 (100자 이내, 근거 원문에 있는 내용만)
   laws?: string[]; // 이 지역·지구의 근거 법률 (토지이용규제 기본법 별표 기준, 표시용). 못 찾으면 없음
+  lawContents?: LawContent[]; // 근거 법률의 내용 (별표가 가리키는 조문 인용). 못 찾으면 없음
+};
+
+// 근거 법률 내용 한 건 (별표가 가리키는 조문의 글을 200자 이내로 인용)
+export type LawContent = {
+  law: string; // 예: "「도시개발법」"
+  ref: string; // 예: "제3조"
+  title: string; // 조문 제목
+  quote: string;
 };
 
 export type CheckSuccess = {
