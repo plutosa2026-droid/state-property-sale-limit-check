@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 국유재산 매각 법률제한 자동체크
 
-## Getting Started
+국유재산 지번을 입력하면 **토지이용계획의 지역·지구를 자동으로 조회**하고, 지역·지구별로 **매각제한 여부를 근거와 함께** 판정해 보여 주는 도우미입니다. (PoC: 개념 검증 단계)
 
-First, run the development server:
+- **주 사용자:** 국유재산 매각 담당자
+- **확인(검토)자:** 팀장·부장·본부장 (결재 라인)
+- **작성자:** 캠코 대전충남본부 사준환
+
+> ⚠ 이 서비스는 검토를 돕는 도구입니다. 매각 가능 여부를 판정하지 않으며, **최종 판단과 책임은 담당자에게 있습니다.**
+
+## 왜 만들었나
+
+국유재산을 매각하려면 매겨진 지역·지구에 따라 매각제한 사항을 확인해야 합니다. 그런데 근거가 재정경제부 「국유재산 처분기준」과 국유재산법·시행령·시행규칙 등 여러 곳에 흩어져 있어, 담당자가 일일이 찾아 대조하는 데 시간이 들고 누락 위험이 있습니다. 이 앱은 지번 하나로 그 대조를 자동화하고, 결재자가 근거를 바로 확인할 수 있게 합니다.
+
+## 주요 기능
+
+1. **지번으로 토지이용계획 자동 조회** (Must ①)
+   - 지번을 입력하면 그 땅에 걸린 지역·지구와 포함·접함·저촉 표기를 불러옵니다. (브이월드 오픈 API)
+   - 시·도는 생략할 수 있고, 같은 지번이 여러 시·도에 있으면 시·도를 선택하게 합니다.
+   - 공공 API가 돌려준 전체 주소와 조회 시각을 보여 주고, 담당자가 필지를 확인한 뒤에만 체크를 시작합니다.
+2. **지역·지구별 매각제한 체크 + 근거 표시** (Must ②)
+   - 판정은 **제한 있음 / 확인 필요 / 제한 없음** 세 가지뿐입니다.
+   - 판정마다 근거(법령 또는 처분기준 조항)와 원문 인용(200자 이내), 판단 이유(100자 이내)를 붙입니다.
+   - 근거가 없거나 "저촉·접함"이면 반드시 **확인 필요**로 판정합니다. AI가 지어낸 내용은 코드에서 걸러냅니다.
+   - 결과 맨 위에 판정별 건수 요약, 맨 아래에 근거 문서별 기준일과 안내 문구를 항상 표시합니다.
+3. **인쇄**: 브라우저 인쇄(Ctrl+P)로 결과를 출력해 검토 문서에 첨부할 수 있습니다.
+
+## 근거 문서
+
+| 문서 | 용도 |
+|---|---|
+| 재정경제부 「2026년도 국유재산 처분기준」 | 매각제한 사유 (제4조) |
+| 국유재산법·시행령·시행규칙 | 조항 근거 (국가법령정보센터) |
+| 「수탁 국유일반재산 관리·처분 업무요강」 별표 6 | 승인 절차 안내용 참고 근거 (캠코 홈페이지 공개 현행내규) |
+| 개별 법률 (도시개발법 등 17개, 법제처 Open API) | 국공유재산의 처분을 직접 제한한다고 명시된 조항만 판정 근거로 연결 |
+
+모두 **공개된 문서**만 사용하며, 정리본은 `data/rules/`에 들어 있습니다. 앱에 넣은 문서는 넣은 시점 기준이라 이후 개정은 반영되지 않을 수 있습니다.
+
+## 기술 스택
+
+- **Next.js 16** (App Router, 서버 쪽 API Route) · React 19 · TypeScript · Tailwind CSS 4
+- 토지이용계획 조회: **브이월드(VWorld) 오픈 API**
+- 판정 보조: **OpenAI API** (기본 모델 `gpt-4.1-mini`)
+- 배포: **Vercel**
+
+## 로컬에서 실행
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+프로젝트 루트에 `.env` 파일을 만들고 아래 값을 넣습니다. (`.env`는 `.gitignore`에 등록되어 있어 저장소에 올라가지 않습니다.)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| 이름 | 설명 |
+|---|---|
+| `VWORLD_API_KEY` | 브이월드 오픈 API 키 (필수) |
+| `OPENAI_API_KEY` | OpenAI API 키 (필수) |
+| `VWORLD_DOMAIN` | (선택) 브이월드 키에 등록한 서비스 주소. 없으면 `localhost` |
+| `OPENAI_MODEL` | (선택) 판정에 쓸 모델 이름. 없으면 `gpt-4.1-mini` |
+| `APP_SECRET` | (선택) 조회 결과 서명 토큰에 더 섞는 비밀 값 |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+API 키는 서버 쪽 코드에서만 사용하고 브라우저에 노출하지 않습니다.
 
-## Learn More
+## 폴더 구조
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/            화면과 서버 쪽 API (조회 /api/land-use, 판정 /api/check)
+lib/            공통 기능 (lib/server는 서버에서만 사용)
+data/rules/     근거 문서 정리본 (조항 단위 JSON)
+scripts/        근거 문서 정리·시험용 스크립트
+PRD.md          기획서
+PLAN.md         계획서
+DESIGN.md       설계서
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 시험 스크립트
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+node scripts/check-parcel.mjs        # 지번 형식 검사
+node scripts/check-rules.mjs         # 근거 후보 찾기
+node --env-file=.env scripts/check-judge.mjs   # 판정 API (개발 서버 실행 필요, OpenAI 호출)
+```
 
-## Deploy on Vercel
+## 하지 않는 것
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+로그인·사용자 계정, 개인정보 입력·저장(지번 하나만 입력), 가격 산정, 매각 가능 여부의 자동 결정, 캠코 내부 시스템 연동, 법령 개정 자동 반영은 이번 범위에 없습니다. 자세한 범위는 [PRD.md](PRD.md)의 6장을 참고하세요.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 문서
+
+- [PRD.md](PRD.md): 기획서 (문제 정의, 성공 기준, 기능과 AI가 지킬 규칙, 보안)
+- [PLAN.md](PLAN.md): 작업 순서와 진행 상태
+- [DESIGN.md](DESIGN.md): 설계서 (화면·데이터 흐름·기술 선택)

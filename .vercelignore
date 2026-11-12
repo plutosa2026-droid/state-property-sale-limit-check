@@ -1,0 +1,11 @@
+.env*
+source-docs/
+trash-can/
+scripts/
+.claude/
+.bkit/
+CHECK.md
+reports/
+.git/
+node_modules/
+.next/

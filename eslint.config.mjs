@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 지울 파일을 모아 두는 폴더와 근거 원문 폴더는 검사하지 않는다.
+    "trash-can/**",
+    "source-docs/**",
   ]),
 ]);
 

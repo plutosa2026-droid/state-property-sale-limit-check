@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* 다크 모드 색(dark: 클래스)은 화면에서만 적용한다. 인쇄할 때는 항상 밝은 색으로 찍히게 하려는 것이다.
+   (기본 dark 변형은 인쇄에도 적용되어, 다크 모드 PC에서 어두운 배경에 어두운 글자로 출력되는 문제가 있었다.) */
+@custom-variant dark {
+  @media screen and (prefers-color-scheme: dark) {
+    @slot;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -8,19 +16,45 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-noto-sans-kr);
 }
 
-@media (prefers-color-scheme: dark) {
+@media screen and (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
 }
 
+/* 인쇄(Ctrl+P): 검토 문서에 첨부할 수 있게 종이에 맞춰 출력한다.
+   입력창·버튼은 각 컴포넌트에서 print:hidden으로 숨기고, 여기서는 종이 여백·색·쪽 나눔만 정한다. */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  :root {
+    color-scheme: light;
+    --background: #ffffff;
+    --foreground: #171717;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+    color: #171717 !important;
+    font-size: 11pt;
+  }
+  /* 판정 배지·표기 색이 흑백 설정에서도 지워지지 않게 한다 */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* 한글이 깔끔하게 나오도록 한글 시스템 글꼴을 앞에 둔다 */
+  font-family: var(--font-noto-sans-kr), "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", Arial, Helvetica, sans-serif;
+  line-height: 1.6;
 }
