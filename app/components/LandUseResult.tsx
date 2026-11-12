@@ -53,6 +53,10 @@ export function LandUseResult({ data, confirmed, onConfirm }: SuccessProps) {
                 >
                   <span className="break-keep text-base font-medium leading-snug">{zone.name}</span>
                   <span className={`shrink-0 rounded-full border px-2.5 py-0 text-sm font-semibold ${BADGE_STYLE[label]}`}>{label}</span>
+                  {/* 근거 법률(토지이용규제 기본법 별표 기준). 별표에 없는 지역·지구는 "확인 필요"로 표시한다 */}
+                  <span className="basis-full break-keep text-sm leading-snug text-zinc-600 dark:text-zinc-400">
+                    관련 법률: {data.laws?.[zone.name]?.length ? data.laws[zone.name].join(", ") : "별표에 없음(확인 필요)"}
+                  </span>
                 </li>
               );
             })}

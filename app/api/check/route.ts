@@ -5,6 +5,7 @@
 import { checkRate, isLookupTokenValid, isSameOrigin } from "@/lib/server/guard";
 import { judgeZones, summarize } from "@/lib/server/judge";
 import { getDocumentInfos } from "@/lib/server/rules";
+import { lawsForZones, ZONE_LAWS_DOCUMENT } from "@/lib/server/zoneLaws";
 import { ERROR_MESSAGES, type ApiError, type CheckResponse, type ErrorCode, type Zone } from "@/lib/types";
 
 // 이 함수가 최대 몇 초까지 실행될 수 있는지 (새 AI 호출 마감 35초 + 호출 1번 최대 20초 = 55초보다 길게). Vercel 같은 환경에서 지켜진다.
@@ -68,11 +69,19 @@ export async function POST(request: Request) {
     // 일부만 실패하면 그 항목만 "확인 필요"로 채워져 있으므로 나머지 결과는 살려서 돌려준다 (DESIGN.md 4.2, 6장).
     if (aiAttempts > 0 && aiFailures === aiAttempts && aiAttempts === results.length) return errorResponse("CHECK_ERROR", 502);
 
+    // 지역·지구별 근거 법률(표시용)을 결과에 덧붙인다
+    const zoneLaws = lawsForZones(results.map((result) => result.zone));
     const response: CheckResponse = {
       ok: true,
-      documents: getDocumentInfos(results.flatMap((result) => result.evidence.map((item) => item.source))),
+      documents: [
+        ...getDocumentInfos(results.flatMap((result) => result.evidence.map((item) => item.source))),
+        // 지역·지구별 근거 법률(표시용)을 보여 줄 때는 그 표(토지이용규제 기본법 별표)의 기준일도 함께 보여 준다
+        ...(Object.keys(zoneLaws).length > 0
+          ? [{ name: "토지이용규제 기본법 별표(지역·지구별 근거 법률)", baseDate: ZONE_LAWS_DOCUMENT.baseDate, basis: ZONE_LAWS_DOCUMENT.basis }]
+          : []),
+      ],
       summary: summarize(results),
-      results,
+      results: results.map((result) => ({ ...result, ...(zoneLaws[result.zone] ? { laws: zoneLaws[result.zone] } : {}) })),
       ...(aiFailures > 0 ? { incomplete: aiFailures } : {}),
     };
     return Response.json(response);

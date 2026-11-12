@@ -64,6 +64,8 @@ export type LandUseSuccess = {
   zones: Zone[];
   // 서버가 이 조회 결과(주소·지역·지구)에 서명한 토큰. 판정 API는 이 토큰이 맞는 목록만 받는다 (임의의 목록으로 AI를 호출하지 못하게 함).
   token: string;
+  // 지역·지구별 근거 법률(토지이용규제 기본법 별표 기준). 표시용이라 서명 대상이 아니며, 법률을 못 찾은 지역·지구는 빠져 있다.
+  laws?: Record<string, string[]>;
 };
 
 // 시·도를 생략했는데 같은 이름의 지번이 여러 시·도에 있을 때의 응답. 화면이 시·도를 고르게 한 뒤 다시 조회한다.
@@ -123,6 +125,7 @@ export type ZoneResult = {
   verdict: Verdict;
   evidence: Evidence[]; // 근거를 못 찾은 "확인 필요"는 빈 배열
   reason: string; // 판단 이유 (100자 이내, 근거 원문에 있는 내용만)
+  laws?: string[]; // 이 지역·지구의 근거 법률 (토지이용규제 기본법 별표 기준, 표시용). 못 찾으면 없음
 };
 
 export type CheckSuccess = {

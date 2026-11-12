@@ -34,6 +34,12 @@ const CARD_STYLE: Record<Verdict, string> = {
 function ZoneDetail({ item }: { item: ZoneResult }) {
   return (
     <>
+      {item.laws?.length ? (
+        <p className="mt-2 break-words text-base">
+          <span className="font-medium text-zinc-700 dark:text-zinc-300">관련 법률: </span>
+          {item.laws.join(", ")}
+        </p>
+      ) : null}
       <div className="mt-2 text-base">
         <p className="font-medium text-zinc-700 dark:text-zinc-300">근거</p>
         {item.evidence.length === 0 ? (
@@ -103,6 +109,12 @@ function CollapsedCard({ item }: { item: ZoneResult }) {
         {/* 둘째 줄: 이유 */}
         <span className="flex items-center gap-2 text-base text-zinc-600 print:hidden dark:text-zinc-400">
           <span className="truncate">
+            {item.laws?.length ? (
+              <>
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">관련 법률</span> {item.laws.join(", ")}
+                <span className="mx-2 text-zinc-400">·</span>
+              </>
+            ) : null}
             <span className="font-medium text-zinc-700 dark:text-zinc-300">이유</span> {item.reason}
           </span>
           <span aria-hidden className="ml-auto shrink-0 text-sm font-semibold text-[#445b9e] print:hidden dark:text-blue-200">

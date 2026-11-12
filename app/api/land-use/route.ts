@@ -4,6 +4,7 @@
 // 공개 서비스라서 호출 횟수 제한·같은 사이트 확인을 거치고, 결과에는 판정 API가 확인할 서명 토큰을 붙인다. (DESIGN.md 7장)
 import { checkParcel } from "@/lib/parcel";
 import { checkRate, isSameOrigin, issueLookupToken } from "@/lib/server/guard";
+import { lawsForZones } from "@/lib/server/zoneLaws";
 import { AmbiguousSidoError, LandUseError, lookupLandUse } from "@/lib/server/landUse";
 import { ERROR_MESSAGES, type ApiError, type ErrorCode, type LandUseResponse } from "@/lib/types";
 
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
   // 2) 조회 (사용자가 요청을 취소하면 브이월드 호출도 함께 멈춘다)
   try {
     const { address, zones } = await lookupLandUse(checked.parts, checked.normalized, request.signal);
-    const body: LandUseResponse = { ok: true, address, queriedAt: nowInKorea(), zones, token: issueLookupToken(address, zones) };
+    const body: LandUseResponse = { ok: true, address, queriedAt: nowInKorea(), zones, token: issueLookupToken(address, zones), laws: lawsForZones(zones.map((zone) => zone.name)) };
     return Response.json(body);
   } catch (error) {
     // 같은 지번이 여러 시·도에 있으면 시·도를 고르게 한다 (오류가 아니므로 200으로 돌려준다)
